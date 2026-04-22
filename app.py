@@ -19,7 +19,6 @@ professores = []
 turmas = []
 
 # 🎨 TEMPLATE BASE (MANTIDO)
-from flask import Flask, render_template_string, send_file
 from io import BytesIO
 
 
@@ -946,7 +945,8 @@ def gerar_graficos_pdf():
     plt.title("Presenças por aluno")
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.savefig("grafico_presenca.png")
+    import matplotlib
+    matplotlib.use('Agg')
     plt.close()
 
     # =========================
@@ -1286,4 +1286,4 @@ def logout():
 
 # 🚀
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
