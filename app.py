@@ -5,6 +5,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 import matplotlib.pyplot as plt
 import os
+import json
 
 app = Flask(__name__)
 app.secret_key = "ebd"
@@ -151,7 +152,103 @@ body{font-family:'Segoe UI';background:#f5f7fb;}
 
 </body>
 </html>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+
+body{
+    font-family:'Segoe UI';
+    background:#f5f7fb;
+}
+
+/* LAYOUT PRINCIPAL */
+.app{
+    display:flex;
+    min-height:100vh;
+}
+
+/* SIDEBAR */
+.sidebar{
+    width:240px;
+    background:#0b3d1f;
+    color:white;
+    padding:20px;
+    flex-shrink:0;
+}
+
+.sidebar a{
+    display:block;
+    color:white;
+    padding:10px;
+    text-decoration:none;
+}
+
+/* CONTEÚDO */
+.main{
+    flex:1;
+    width:100%;
+}
+
+.content{
+    padding:20px;
+}
+
+/* CARDS */
+.card{
+    background:white;
+    padding:20px;
+    margin-bottom:15px;
+    border-radius:10px;
+    overflow-x:auto;
+}
+
+/* GRID */
+.grid-3{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:15px;
+}
+
+/* =========================
+   📱 MOBILE RESPONSIVO
+========================= */
+@media (max-width: 768px){
+
+    .app{
+        flex-direction:column;
+    }
+
+    .sidebar{
+        width:100%;
+        display:flex;
+        overflow-x:auto;
+        white-space:nowrap;
+    }
+
+    .sidebar a{
+        display:inline-block;
+        padding:10px 15px;
+    }
+
+    .content{
+        padding:10px;
+    }
+
+    .grid-3{
+        grid-template-columns:1fr;
+    }
+
+    table{
+        font-size:12px;
+    }
+
+    input, select, textarea{
+        width:100%;
+        font-size:14px;
+    }
+}
+</style>
 """
+
 
 # 🔐 LOGIN (CORRIGIDO)
 @app.route("/", methods=["GET","POST"])
@@ -256,15 +353,15 @@ def login():
         </form>
 
         <div class="error">{erro}</div>
+        
     </div>
 
     </body>
     </html>
     """
 
-# 📊 DASHBOARD (MANTIDO)
 @app.route("/dashboard")
-def dashboard():    
+def dashboard():
 
     # =========================
     # 📊 CÁLCULOS DE PRESENÇA
@@ -289,7 +386,7 @@ def dashboard():
                 total_faltas += 1
 
     # =========================
-    # 📚 AULAS POR DOMINGO
+    # 📚 AULAS POR DATA
     # =========================
     aulas_por_data = {}
 
@@ -298,7 +395,7 @@ def dashboard():
         aulas_por_data[data] = aulas_por_data.get(data, 0) + 1
 
     # =========================
-    # 📦 PREPARAR DADOS PARA JS
+    # 📦 DADOS PARA JS
     # =========================
     alunos_labels = list(por_aluno.keys())
     presencas_data = [por_aluno[a]["presente"] for a in alunos_labels]
@@ -311,11 +408,75 @@ def dashboard():
     if (total_presencas + total_faltas) > 0:
         taxa_freq = round((total_presencas / (total_presencas + total_faltas)) * 100, 1)
 
+    # =========================
+    # 👨‍🎓 ALUNOS MATRICULADOS
+    # =========================
+    total_alunos = len(alunos)
+
+    # =========================
+    # 🏫 ALUNOS POR TURMA
+    # =========================
+    alunos_por_turma = {}
+
+    for a in alunos:
+        turma = a.get("turma", "Sem turma")
+        alunos_por_turma[turma] = alunos_por_turma.get(turma, 0) + 1
+
+    # =========================
+    # 🥇 RANKING PRESENÇAS / FALTAS
+    # =========================
+    ranking = {}
+
+    for r in presencas:
+        for d in r.get("dados", []):
+            nome = d["nome"]
+
+            if nome not in ranking:
+                ranking[nome] = {"presente": 0, "falta": 0}
+
+            if d["status"] == "presente":
+                ranking[nome]["presente"] += 1
+            else:
+                ranking[nome]["falta"] += 1
+
+    ranking_presenca = sorted(
+        ranking.items(),
+        key=lambda x: x[1]["presente"],
+        reverse=True
+    )
+
+    ranking_falta = sorted(
+        ranking.items(),
+        key=lambda x: x[1]["falta"],
+        reverse=True
+    )
+
+    # =========================
+    # 📊 HTML DO DASHBOARD
+    # =========================
     conteudo = f"""
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-bottom:20px;">
-        <div class="card"><h3>📊 Frequência Geral</h3><h2>{taxa_freq}%</h2></div>
-        <div class="card"><h3>✅ Presenças</h3><h2>{total_presencas}</h2></div>
-        <div class="card"><h3>❌ Faltas</h3><h2>{total_faltas}</h2></div>
+    <div class="grid-3">
+
+        <div class="card">
+            <h3>👨‍🎓 Alunos Matriculados</h3>
+            <h2>{total_alunos}</h2>
+        </div>
+
+        <div class="card">
+            <h3>📊 Presenças</h3>
+            <h2>{total_presencas}</h2>
+        </div>
+
+        <div class="card">
+            <h3>❌ Faltas</h3>
+            <h2>{total_faltas}</h2>
+        </div>
+
+    </div>
+
+    <div class="card">
+        <h3>🏫 Alunos por Turma</h3>
+        <canvas id="graficoTurmas"></canvas>
     </div>
 
     <div class="card">
@@ -323,62 +484,79 @@ def dashboard():
         <canvas id="graficoAlunos"></canvas>
     </div>
 
-    <div class="card">
-        <h3>📅 Aulas por Domingo</h3>
-        <canvas id="graficoAulas"></canvas>
+    <div class="grid-3">
+
+        <div class="card">
+            <h3>🥇 Mais Presentes</h3>
+            {"".join([
+                f"<p>{n[0]} - {n[1]['presente']} presenças</p>"
+                for n in ranking_presenca[:5]
+            ])}
+        </div>
+
+        <div class="card">
+            <h3>📉 Mais Faltas</h3>
+            {"".join([
+                f"<p>{n[0]} - {n[1]['falta']} faltas</p>"
+                for n in ranking_falta[:5]
+            ])}
+        </div>
+
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <script>
+
     // =========================
-    // 📊 GRÁFICO ALUNOS
+    // 📊 ALUNOS
     // =========================
     new Chart(document.getElementById('graficoAlunos'), {{
         type: 'bar',
         data: {{
-            labels: {alunos_labels},
+            labels: {json.dumps(alunos_labels)},
             datasets: [
                 {{
                     label: 'Presenças',
-                    data: {presencas_data},
+                    data: {json.dumps(presencas_data)},
                     backgroundColor: '#1e8449'
                 }},
                 {{
                     label: 'Faltas',
-                    data: {faltas_data},
+                    data: {json.dumps(faltas_data)},
                     backgroundColor: '#c0392b'
                 }}
             ]
         }},
         options: {{
-            responsive: true
+            responsive: true,
+            maintainAspectRatio: false
         }}
     }});
 
     // =========================
-    // 📅 AULAS POR DOMINGO
+    // 🏫 TURMAS
     // =========================
-    new Chart(document.getElementById('graficoAulas'), {{
-        type: 'line',
+    new Chart(document.getElementById('graficoTurmas'), {{
+        type: 'doughnut',
         data: {{
-            labels: {datas_aulas},
+            labels: {json.dumps(list(alunos_por_turma.keys()))},
             datasets: [{{
-                label: 'Aulas ministradas',
-                data: {aulas_qtd},
-                borderColor: '#2980b9',
-                fill: false
+                data: {json.dumps(list(alunos_por_turma.values()))},
+                backgroundColor: ['#2980b9','#27ae60','#8e44ad','#f39c12','#c0392b']
             }}]
         }},
         options: {{
-            responsive: true
+            responsive: true,
+            maintainAspectRatio: false
         }}
     }});
+
     </script>
     """
 
     return render_template_string(base, titulo="Dashboard Inteligente", conteudo=conteudo)
-
+    
 #CADASTRO DO PROFESSOR
 
 @app.route("/professores", methods=["GET","POST"])
@@ -659,26 +837,28 @@ def chamada():
         """
 
     conteudo = f"""
-    <div class="card">
+<div class="card">
 
-        <h2>📖 Diário de Classe - Chamada</h2>
-        <p style="color:#666;margin-bottom:15px;">
-            Registre a presença dos alunos como em uma escola real
-        </p>
+    <h2>📖 Diário de Classe - Chamada</h2>
+    <p style="color:#666;margin-bottom:15px;">
+        Registre a presença dos alunos como em uma escola real
+    </p>
 
-        <form method="POST">
+    <form method="POST">
 
-            <div style="margin-bottom:15px;">
-                <label>📅 Data da Aula</label><br>
-                <input type="date" name="data" style="
-                    padding:8px;
-                    border:1px solid #ccc;
-                    border-radius:6px;
-                    margin-top:5px;
-                ">
-            </div>
+        <div style="margin-bottom:15px;">
+            <label>📅 Data da Aula</label><br>
+            <input type="date" name="data" style="
+                padding:8px;
+                border:1px solid #ccc;
+                border-radius:6px;
+                margin-top:5px;
+            ">
+        </div>
 
-            <table style="width:100%;border-collapse:collapse;background:white;">
+        <div class="table-container">
+            <table style="width:100%;border-collapse:collapse;">
+
                 <thead>
                     <tr style="background:#0b3d1f;color:white;">
                         <th style="padding:10px;text-align:left;">Aluno</th>
@@ -691,25 +871,27 @@ def chamada():
                 <tbody>
                     {tabela}
                 </tbody>
+
             </table>
+        </div>
 
-            <button style="
-                margin-top:15px;
-                padding:12px 20px;
-                background:#1e8449;
-                color:white;
-                border:none;
-                border-radius:8px;
-                cursor:pointer;
-                font-weight:bold;
-            ">
-                💾 Salvar Chamada
-            </button>
+        <button style="
+            margin-top:15px;
+            padding:12px 20px;
+            background:#1e8449;
+            color:white;
+            border:none;
+            border-radius:8px;
+            cursor:pointer;
+            font-weight:bold;
+        ">
+            💾 Salvar Chamada
+        </button>
 
-        </form>
+    </form>
 
-    </div>
-    """
+</div>
+"""
 
     return render_template_string(base, titulo="📚 Diário de Classe", conteudo=conteudo)
 
@@ -744,7 +926,7 @@ def relatorio():
     <div class="card">
         <h2>📊 Relatório Geral da Escola Bíblica</h2>
 
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:15px;">
+        <div class="grid-3">
 
             <div class="card">
                 <h3>👨‍🎓 Alunos</h3>
@@ -784,31 +966,39 @@ def relatorio():
         <div class="card">
             <h3>📅 Aula do dia: {r['data']}</h3>
 
-            <table style="width:100%;margin-top:10px;border-collapse:collapse;">
+        <div class="table-container">
+        <table style="width:100%;border-collapse:collapse;">
+
+            <thead>
                 <tr style="background:#0b3d1f;color:white;">
                     <th style="padding:8px;">Aluno</th>
                     <th>Status</th>
                     <th>Justificativa</th>
                 </tr>
-        """
+            </thead>
+
+            <tbody>
+            """
 
         for d in r.get("dados", []):
             cor = "#1e8449" if d["status"] == "presente" else "#c0392b"
 
-            conteudo += f"""
-                <tr style="text-align:center;">
-                    <td style="padding:8px;">{d['nome']}</td>
-                    <td style="color:{cor};font-weight:bold;">
-                        {d['status'].upper()}
-                    </td>
-                    <td>{d['justificativa']}</td>
-                </tr>
-            """
-
-        conteudo += """
-            </table>
-        </div>
+    conteudo += f"""
+        <tr style="text-align:center;">
+            <td style="padding:8px;">{d['nome']}</td>
+            <td style="color:{cor};font-weight:bold;">
+                {d['status'].upper()}
+            </td>
+            <td>{d['justificativa']}</td>
+        </tr>
         """
+
+    conteudo += """
+            </tbody>
+        </table>
+    </div>
+</div>
+"""
 
     # =========================
     # 📌 BOTÃO PDF
@@ -1284,6 +1474,9 @@ def logout():
     session.clear()
     return redirect("/")
 
+# 🚀
+if __name__ == "__main__":
+    app.run()
 # 🚀
 if __name__ == "__main__":
     app.run()
